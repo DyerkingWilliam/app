@@ -1,84 +1,120 @@
 import streamlit as st
 import time
-import re
-import json
-from docx import Document
-from io import BytesIO
+import os
 
-# 导入你之前的核心逻辑函数（此处为示意，需确保函数在同一目录下或文件中）
-# from ai_driven_processor import get_structured_blocks, get_detailed_analysis, load_answers
+# ================= 1. 界面与国际化配置 =================
+LANG_PACK = {
+    "zh": {
+        "nav_home": "首页",
+        "nav_user": "用户中心",
+        "nav_recharge": "充值中心",
+        "title": "📚 AI 全科试题专家解析系统",
+        "welcome": "欢迎回来，尊贵的用户！",
+        "subject_label": "第一步：选择解析学科",
+        "upload_label": "第二步：上传试卷 (支持 Word/PDF)",
+        "process_btn": "开始专家级解析",
+        "footer": "© 2024 AI解析实验室 - 您的智能学习助手",
+        "login": "登录",
+        "register": "注册",
+        "balance": "当前余额",
+        "unit": "点位",
+        "lang_name": "English"
+    },
+    "en": {
+        "nav_home": "Home",
+        "nav_user": "User Profile",
+        "nav_recharge": "Recharge",
+        "title": "📚 AI Multi-Subject Analysis System",
+        "welcome": "Welcome back, User!",
+        "subject_label": "Step 1: Select Subject",
+        "upload_label": "Step 2: Upload Paper (Word/PDF)",
+        "process_btn": "Start Expert Analysis",
+        "footer": "© 2024 AI Lab - Your Intelligent Tutor",
+        "login": "Login",
+        "register": "Register",
+        "balance": "Balance",
+        "unit": "Credits",
+        "lang_name": "中文"
+    }
+}
 
-st.set_page_config(page_title="EduParser - 智能解析", layout="wide")
+# 初始化语言状态
+if 'lang' not in st.session_state:
+    st.session_state.lang = 'zh'
 
-# 自定义 CSS 样式以接近 UI 图片
-st.markdown("""
-    <style>
-    .main { background-color: #fff5f5; }
-    .stButton>button { background-color: #e63946; color: white; width: 100%; border-radius: 5px; }
-    .upload-card { border: 1px solid #f0f0f0; padding: 20px; border-radius: 10px; background: white; text-align: center; }
-    </style>
-    """, unsafe_allow_html=True)
 
-# 顶部导航模拟
-st.image("https://via.placeholder.com/150x50?text=EduParser", width=150)  # 替换为你的Logo
+def toggle_lang():
+    st.session_state.lang = 'en' if st.session_state.lang == 'zh' else 'zh'
 
-st.title("Welcome to EduParser!")
-st.write("Generate Detailed Exam Solutions with Ease")
 
-# 主体布局：左右两个上传框
-col1, col2 = st.columns(2)
-
-with col1:
-    st.markdown('<div class="upload-card">', unsafe_allow_html=True)
-    st.subheader("Upload Exam Paper")
-    exam_file = st.file_uploader("Choose Word File", type=['docx'], key="exam")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-with col2:
-    st.markdown('<div class="upload-card">', unsafe_allow_html=True)
-    st.subheader("Upload Answer Key (Optional)")
-    ans_file = st.file_uploader("Choose TXT File", type=['txt'], key="ans")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# 中间生成按钮
-if st.button("Generate Solutions", use_container_width=True):
-    if exam_file:
-        # 1. 初始化进度条
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-
-        # 2. 模拟/执行 AI 处理逻辑
-        status_text.text("Analyzing and Generating Solutions, Please Wait...")
-
-        # 步骤 A: 结构化识别 (示例进度 30%)
-        # blocks = asyncio.run(get_structured_blocks(client, full_text))
-        progress_bar.progress(30)
-        time.sleep(1)  # 模拟耗时
-
-        # 步骤 B: 循环解析 (示例进度每题增加)
-        progress_bar.progress(65)
-        time.sleep(1)
-
-        # 3. 完成状态
-        progress_bar.progress(100)
-        st.success("Analysis Complete! Your Solution is Ready.")
-
-        # 4. 下载区域
+# ================= 2. 侧边栏：用户与充值 =================
+def render_sidebar(t):
+    with st.sidebar:
+        st.button(t["lang_name"], on_click=toggle_lang)
         st.markdown("---")
-        st.subheader("Download Your Solution")
-        # 假设 processed_docx 是你生成的 BytesIO 对象
-        st.download_button(
-            label="Download File",
-            data=b"Your processed content",  # 这里替换为生成的文档二进制流
-            file_name="Solution_Report.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-    else:
-        st.error("Please upload an exam paper first!")
 
-# 侧边栏：余额与充值
-with st.sidebar:
-    st.header("Top Up Your Account")
-    st.markdown("### Current Balance: **¥120**")
-    if st.button("Recharge Now"):
-        st.info("Recharge feature coming soon...")
+        # 用户登录/注册模块
+        st.subheader(t["nav_user"])
+        tab_l, tab_r = st.tabs([t["login"], t["register"]])
+        with tab_l:
+            st.text_input("ID", placeholder="Email/Phone")
+            st.text_input("Password", type="password")
+            st.button(t["login"], use_container_width=True)
+
+        # 充值模块接口
+        st.markdown("---")
+        st.subheader(t["nav_recharge"])
+        st.metric(label=t["balance"], value=f"120 {t['unit']}")
+        if st.button("💳 扫码充值"):
+            st.info("支付接口回调中... (对接阿里云支付接口)")
+
+
+# ================= 3. 主界面：学科路由与上传 =================
+def render_main(t):
+    st.title(t["title"])
+    st.info(t["welcome"])
+
+    # 学科选择接口
+    subject = st.selectbox(
+        t["subject_label"],
+        ["英语 (English)", "数学 (Math)", "语文 (Chinese)", "物理 (Physics)", "其他 (Others)"]
+    )
+
+    # 文件上传
+    uploaded_file = st.file_uploader(t["upload_label"], type=['docx', 'pdf'])
+
+    if uploaded_file:
+        st.success(f"已接收文件: {uploaded_file.name}")
+
+        if st.button(t["process_btn"], type="primary"):
+            # 路由逻辑
+            if "英语" in subject:
+                run_english_logic(uploaded_file)
+            else:
+                run_general_logic(subject, uploaded_file)
+
+
+# ================= 4. 后端逻辑接口 (在这里接你之前的代码) =================
+def run_english_logic(file):
+    with st.status("正在调用英语名师模板...", expanded=True) as status:
+        st.write("🔍 正在扫描试卷结构...")
+        time.sleep(1)
+        st.write("🚀 正在并发请求 DeepSeek 专家引擎...")
+        time.sleep(2)
+        status.update(label="解析完成！", state="complete", expanded=False)
+
+    st.balloons()
+    st.download_button("📩 下载专家解析报告", data="假装这是生成的word内容", file_name="Expert_Analysis.docx")
+
+
+def run_general_logic(subj, file):
+    st.warning(f"当前学科 [{subj}] 使用通用 AI 逻辑解析中...")
+    # 这里接入你 V6.0 版本的“综合题型”自适应逻辑
+
+
+# ================= 5. 程序入口 =================
+t = LANG_PACK[st.session_state.lang]
+render_sidebar(t)
+render_main(t)
+st.markdown("---")
+st.caption(t["footer"])
